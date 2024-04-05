@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# builds the project and creates binaries for pi pico
+rm -rf out
+mkdir out
+cd out
+cmake ..
+make 
+
+# copies the binaries onto the pico pico (macos)
+cp main.uf2 /Volumes/RPI-RP2
+
+# opens up serial monitor for debug
+screen /dev/tty.usbmodem115101 115101
