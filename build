@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -e
 
 # builds the project and creates binaries for pi pico
 rm -rf out
