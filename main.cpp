@@ -87,15 +87,15 @@ struct hardware_pwm {
 struct tocometer {
     int tocometer_pin;
     int last_reading = 0;
-    uint64_t last_reading_time_us;
-    uint64_t rpm = 0;
-    uint64_t debounce_us = 100;
+    uint64_t last_posedge_time_us;
+    double rpm = 0;
+    uint64_t debounce_us = 4'000;
 
     periodic_logger tocometer_debug = periodic_logger("TOCOMETER", 1000);
 
     tocometer(int tocometer_pin) {
         this->tocometer_pin = tocometer_pin;
-        this->last_reading_time_us = Utils::get_time_us();
+        this->last_posedge_time_us = Utils::get_time_us();
     }
 
     void init() {
@@ -105,15 +105,20 @@ struct tocometer {
 
     void loop() {
         uint64_t cur_time = Utils::get_time_us();
-        if(cur_time - last_reading_time_us > debounce_us) {
-            if(gpio_get(tocometer_pin) != last_reading) {
+        if(gpio_get(tocometer_pin) != last_reading) {
+            if(last_reading == 0) {
                 // two tocometer pos edge tics per revolution
-                rpm = ((cur_time - last_reading_time_us) * 60) / 4;
-                last_reading_time_us = cur_time;
+                double new_rpm = ((1e6 * 60) / ((cur_time - last_posedge_time_us))) / 2.0;
+                rpm = ((rpm * 4) + new_rpm) / 5;
+                last_posedge_time_us = cur_time;
+                last_reading = 1;
+            }
+            else if((cur_time - last_posedge_time_us) > debounce_us) {
+                last_reading = 0;            
             }
         }
-
         tocometer_debug.log_msg("RPM: " + std::to_string(rpm));
+        tocometer_debug.loop();
     }
 
 };
@@ -166,6 +171,7 @@ int main() {
         noctua_fan.set_duty_cycle_low_ratio(0.5);
         noctual_toc.loop();
         onboard_led.loop();
+        heartbeat_msg.loop();
 
         heartbeat_msg.log_msg("Alive!");
     }
