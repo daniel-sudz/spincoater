@@ -1,10 +1,15 @@
+// note rpm below 500 is not supported
 [
     {
-        "HOLD_SECONDS": 20,
+        "HOLD_SECONDS": 10,
+        "RPM": 1500
+    },
+    {
+        "HOLD_SECONDS": 10,
         "RPM": 500
     },
     {
-        "HOLD_SECONDS": 20,
+        "HOLD_SECONDS": 10,
         "RPM": 1000
     }
 ]

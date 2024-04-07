@@ -77,37 +77,38 @@ struct hardware_pwm {
     }
 
     void set_duty_cycle_low_ratio(float duty_ratio_low) {
-        pwm_set_gpio_level(pwm_pin, int(float(pwm_wrap_tics) * duty_ratio_low));
+        set_duty_cycle_low_ratio(1.0f - duty_ratio_low);    
     }
-    void set_duty_cycle_high_ratio(float duty_ratio_low) {
-        set_duty_cycle_low_ratio(1.0f - duty_ratio_low);
+    void set_duty_cycle_high_ratio(float duty_ratio_high) {
+        pwm_set_gpio_level(pwm_pin, int(float(pwm_wrap_tics) * duty_ratio_high));
     }
 };
 
-struct tocometer {
-    int tocometer_pin;
+struct tachometer {
+    int tachometer_pin;
     int last_reading = 0;
     uint64_t last_posedge_time_us;
     double rpm = 0;
     uint64_t debounce_us = 4'000;
 
-    periodic_logger tocometer_debug = periodic_logger("TOCOMETER", 1000);
+    periodic_logger tachometer_debug = periodic_logger("TACHOMETER", 1000);
 
-    tocometer(int tocometer_pin) {
-        this->tocometer_pin = tocometer_pin;
+    tachometer(int tachometer_pin) {
+        this->tachometer_pin = tachometer_pin;
         this->last_posedge_time_us = Utils::get_time_us();
     }
 
     void init() {
-      gpio_init(tocometer_pin);
-      gpio_set_dir(tocometer_pin, GPIO_IN);
+      gpio_init(tachometer_pin);
+      gpio_set_dir(tachometer_pin, GPIO_IN);
+      gpio_pull_up(tachometer_pin);
     }
 
     void loop() {
         uint64_t cur_time = Utils::get_time_us();
-        if(gpio_get(tocometer_pin) != last_reading) {
+        if(gpio_get(tachometer_pin) != last_reading) {
             if(last_reading == 0) {
-                // two tocometer pos edge tics per revolution
+                // two tachometer pos edge tics per revolution
                 double new_rpm = ((1e6 * 60) / ((cur_time - last_posedge_time_us))) / 2.0;
                 rpm = ((rpm * 4) + new_rpm) / 5;
                 last_posedge_time_us = cur_time;
@@ -117,8 +118,8 @@ struct tocometer {
                 last_reading = 0;            
             }
         }
-        tocometer_debug.log_msg("RPM: " + std::to_string(rpm));
-        tocometer_debug.loop();
+        //tachometer_debug.log_msg("RPM: " + std::to_string(rpm));
+        tachometer_debug.loop();
     }
 
 };
@@ -126,10 +127,13 @@ struct tocometer {
 struct fan_controller {
     double rpm_target = 900;
     double pwm_pos_duty_ratio = 0.5;
-    double proportional = 0.05;
+    double proportional = 1.0 / (1800.0 * 10000);
 
     hardware_pwm noctua_fan;
-    tocometer noctua_toc;
+    tachometer noctua_toc;
+
+    periodic_logger controller_msg = periodic_logger("FAN_CONTROLLER", 1000);
+
 
     fan_controller(int pwm_pin, int toc_pin, int pwm_freq): 
         noctua_fan(pwm_pin, pwm_freq), noctua_toc(toc_pin) {
@@ -143,11 +147,22 @@ struct fan_controller {
     void loop() {
         double error_rpm = rpm_target - noctua_toc.rpm;
         double new_pwm_pos_duty_ratio = pwm_pos_duty_ratio + (error_rpm * proportional);
+
         new_pwm_pos_duty_ratio = std::max(0.2, new_pwm_pos_duty_ratio);
+        new_pwm_pos_duty_ratio = std::min(1.0, new_pwm_pos_duty_ratio);
+
         noctua_fan.set_duty_cycle_high_ratio(new_pwm_pos_duty_ratio);
         pwm_pos_duty_ratio = new_pwm_pos_duty_ratio;
 
+
+        std::string rpm_current_msg = "[RPM_CURRRENT: " + std::to_string(int(noctua_toc.rpm)) + "]";
+        std::string rpm_target_msg = "[RPM_TARGET: " + std::to_string(int(rpm_target)) + "]";
+        std::string target_duty_cycle_msg = "[TARGET_DUTY_CYCLE: " + std::to_string(pwm_pos_duty_ratio) + "]";
+
+        controller_msg.log_msg(rpm_current_msg + "" + rpm_target_msg + "" + target_duty_cycle_msg);
+
         noctua_toc.loop();
+        controller_msg.loop();
     }
 
     void set_rpm(double rpm) {
@@ -201,33 +216,32 @@ struct Serial {
 };
 
 
-fan_controller noctua_fan(NOCTUA_PWM_PIN, NOCTUA_TOC_PIN, NOCTUA_PWM_FREQUENCY);
+fan_controller noctua_fan_controller(NOCTUA_PWM_PIN, NOCTUA_TOC_PIN, NOCTUA_PWM_FREQUENCY);
 led_debug_blink onboard_led(LED_ONBAORD);
 periodic_logger heartbeat_msg("HEARTBEAT", 1000);
 
 // configure the board
 void init() {
-    noctua_fan.init();
+    noctua_fan_controller.init();
     onboard_led.init();
 }
 
 int main() {
     stdio_init_all();
+    while(!stdio_usb_connected());
+
     init();
 
     while (true) {
-        noctua_fan.loop();
-        onboard_led.loop();
-        heartbeat_msg.loop();
-
         std::string rpm_command = Serial::readline();
         if(rpm_command != "") {
             heartbeat_msg.log_msg("RECEIVED RPM COMMAND: " + rpm_command);
-            noctua_fan.set_rpm(std::stoi(rpm_command));
+            noctua_fan_controller.set_rpm(std::stoi(rpm_command));
         }
-        else {
-            //heartbeat_msg.log_msg("Alive!");
-        }
+
+        noctua_fan_controller.loop();
+        onboard_led.loop();
+        heartbeat_msg.loop();
     }
 
 }
