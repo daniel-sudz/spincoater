@@ -11,4 +11,4 @@ make
 cp main.uf2 /Volumes/RPI-RP2
 
 # opens up serial monitor for debug
-screen /dev/tty.usbmodem115101 115101
+# screen /dev/`ls /dev | grep tty.usbmodem` 115101
