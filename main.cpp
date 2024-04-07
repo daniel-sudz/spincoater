@@ -182,10 +182,27 @@ struct led_debug_blink {
 
 };
 
+struct Serial {
+
+    static std::string readline() {
+        std::string line;
+
+        int cur_char = getchar_timeout_us(0);
+        if(cur_char == PICO_ERROR_TIMEOUT) {
+            return "";
+        }
+        while(cur_char != '\n') {
+            line += (char) cur_char;
+            cur_char = getchar_timeout_us(1'000'000'000);
+        }
+        return line;
+    }
+  
+};
+
 
 fan_controller noctua_fan(NOCTUA_PWM_PIN, NOCTUA_TOC_PIN, NOCTUA_PWM_FREQUENCY);
 led_debug_blink onboard_led(LED_ONBAORD);
-
 periodic_logger heartbeat_msg("HEARTBEAT", 1000);
 
 // configure the board
@@ -203,9 +220,14 @@ int main() {
         onboard_led.loop();
         heartbeat_msg.loop();
 
-        noctua_fan.set_rpm(1500);
-
-        heartbeat_msg.log_msg("Alive!");
+        std::string rpm_command = Serial::readline();
+        if(rpm_command != "") {
+            heartbeat_msg.log_msg("RECEIVED RPM COMMAND: " + rpm_command);
+            noctua_fan.set_rpm(std::stoi(rpm_command));
+        }
+        else {
+            //heartbeat_msg.log_msg("Alive!");
+        }
     }
 
 }

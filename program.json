@@ -1,0 +1,10 @@
+[
+    {
+        "HOLD_SECONDS": 20,
+        "RPM": 500
+    },
+    {
+        "HOLD_SECONDS": 20,
+        "RPM": 1000
+    }
+]
