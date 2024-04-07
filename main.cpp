@@ -123,6 +123,38 @@ struct tocometer {
 
 };
 
+struct fan_controller {
+    double rpm_target = 900;
+    double pwm_pos_duty_ratio = 0.5;
+    double proportional = 0.05;
+
+    hardware_pwm noctua_fan;
+    tocometer noctua_toc;
+
+    fan_controller(int pwm_pin, int toc_pin, int pwm_freq): 
+        noctua_fan(pwm_pin, pwm_freq), noctua_toc(toc_pin) {
+    }
+
+    void init() {
+        noctua_fan.init();
+        noctua_toc.init();
+    }
+
+    void loop() {
+        double error_rpm = rpm_target - noctua_toc.rpm;
+        double new_pwm_pos_duty_ratio = pwm_pos_duty_ratio + (error_rpm * proportional);
+        new_pwm_pos_duty_ratio = std::max(0.2, new_pwm_pos_duty_ratio);
+        noctua_fan.set_duty_cycle_high_ratio(new_pwm_pos_duty_ratio);
+        pwm_pos_duty_ratio = new_pwm_pos_duty_ratio;
+
+        noctua_toc.loop();
+    }
+
+    void set_rpm(double rpm) {
+        rpm_target = rpm;
+    }
+};
+
 struct led_debug_blink {
     int led_pin;
     bool led_state = 0;
@@ -150,8 +182,8 @@ struct led_debug_blink {
 
 };
 
-hardware_pwm noctua_fan(NOCTUA_PWM_PIN, NOCTUA_PWM_FREQUENCY);
-tocometer noctual_toc(NOCTUA_TOC_PIN);
+
+fan_controller noctua_fan(NOCTUA_PWM_PIN, NOCTUA_TOC_PIN, NOCTUA_PWM_FREQUENCY);
 led_debug_blink onboard_led(LED_ONBAORD);
 
 periodic_logger heartbeat_msg("HEARTBEAT", 1000);
@@ -159,7 +191,6 @@ periodic_logger heartbeat_msg("HEARTBEAT", 1000);
 // configure the board
 void init() {
     noctua_fan.init();
-    noctual_toc.init();
     onboard_led.init();
 }
 
@@ -168,10 +199,11 @@ int main() {
     init();
 
     while (true) {
-        noctua_fan.set_duty_cycle_low_ratio(0.5);
-        noctual_toc.loop();
+        noctua_fan.loop();
         onboard_led.loop();
         heartbeat_msg.loop();
+
+        noctua_fan.set_rpm(1500);
 
         heartbeat_msg.log_msg("Alive!");
     }
